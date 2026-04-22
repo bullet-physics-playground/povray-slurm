@@ -1,0 +1,29 @@
+# Rendered frames
+frames/*.png
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+*.tmp/
+
+# Generated config files
+.frames
+animation_render.ini
+frame_queue.txt
+best_config.txt
+progress.log
+queue.lock
+
+# Output video
+*.mp4
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Editor files
+*.swp
+*.swo
+*~

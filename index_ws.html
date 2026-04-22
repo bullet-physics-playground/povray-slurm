@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>POV-Ray Live Dashboard</title>
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+<h2>Realtime Cluster Monitoring</h2>
+
+<canvas id="chart" width="800" height="400"></canvas>
+
+<script>
+const socket = io();
+const ctx = document.getElementById('chart').getContext('2d');
+
+let chart = new Chart(ctx, {
+    type: 'line',
+    data: { labels: [], datasets: [] },
+    options: { animation: false, scales: { y: { beginAtZero: true } } }
+});
+
+let history = {};
+
+socket.on("update", (data) => {
+    const time = new Date().toLocaleTimeString();
+    chart.data.labels.push(time);
+
+    Object.keys(data).forEach(node => {
+        if (!history[node]) {
+            history[node] = [];
+            chart.data.datasets.push({
+                label: node,
+                data: [],
+                fill: false,
+                tension: 0.1
+            });
+        }
+        history[node].push(data[node].fps);
+    });
+
+    chart.data.datasets.forEach(ds => {
+        const node = ds.label;
+        ds.data.push(history[node].slice(-1)[0] || 0);
+    });
+
+    if (chart.data.labels.length > 30) {
+        chart.data.labels.shift();
+        chart.data.datasets.forEach(ds => ds.data.shift());
+    }
+
+    chart.update();
+});
+</script>
+
+</body>
+</html>
