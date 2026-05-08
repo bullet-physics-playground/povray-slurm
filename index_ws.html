@@ -4,12 +4,112 @@
   <title>POV-Ray Live Dashboard</title>
   <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: monospace; background: #1a1a2e; color: #eee; margin: 20px; }
+    h2 { color: #e94560; margin-bottom: 6px; }
+    .subtitle { color: #888; font-size: 13px; margin-top: 0; margin-bottom: 16px; }
+    .container { display: flex; gap: 20px; flex-wrap: wrap; }
+    .chart-box { background: #16213e; padding: 15px; border-radius: 8px; }
+    .stats-table { background: #16213e; padding: 15px; border-radius: 8px; min-width: 520px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 6px 10px; text-align: left; border-bottom: 1px solid #0f3460; font-size: 13px; }
+    th { color: #e94560; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .bar-bg { background: #0f3460; height: 14px; border-radius: 3px; overflow: hidden; width: 80px; display: inline-block; vertical-align: middle; }
+    .bar-fill { height: 100%; border-radius: 3px; transition: width 0.5s; }
+    .bar-cpu { background: #e94560; }
+    .bar-mem { background: #0f3460; }
+    .heatmap-box { background: #16213e; padding: 15px; border-radius: 8px; margin-top: 20px; width: 100%; box-sizing: border-box; }
+    .heatmap-box canvas { display: block; width: 100%; }
+    .controls { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+    .controls label { color: #aaa; font-size: 13px; }
+    .controls select { background: #0f3460; color: #eee; border: 1px solid #533483; padding: 4px 8px; border-radius: 4px; font-family: monospace; cursor: pointer; }
+    .legend { display: flex; align-items: center; gap: 6px; margin-left: auto; font-size: 12px; color: #aaa; }
+    .legend-bar { width: 120px; height: 12px; border-radius: 2px; background: linear-gradient(to right, #00e676, #ffea00, #ff1744); }
+    .queue-bar { background: #16213e; padding: 12px 15px; border-radius: 8px; margin-top: 10px; display: flex; gap: 24px; align-items: center; flex-wrap: wrap; }
+    .queue-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+    .queue-badge { display: inline-block; padding: 2px 10px; border-radius: 10px; font-weight: bold; font-size: 14px; min-width: 24px; text-align: center; }
+    .badge-main { background: #533483; color: #fff; }
+    .badge-failed { background: #ff8f00; color: #000; }
+    .badge-dead { background: #e94560; color: #fff; }
+    .queue-label { color: #aaa; }
+    .retry-row { background: rgba(255,143,0,0.08); }
+    .dead-row { background: rgba(233,69,96,0.08); }
+    .error-box { background: #0d1117; padding: 10px 14px; border-radius: 8px; margin-top: 10px; font-size: 12px; border-left: 3px solid #e94560; }
+    .error-box .title { color: #e94560; font-weight: bold; margin-bottom: 4px; font-size: 13px; }
+    .error-box .line { color: #aaa; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 1px 0; }
+    .error-box .line .ts { color: #555; }
+    .error-box .line .node { color: #ff8f00; }
+    .error-box .line .bad { color: #e94560; }
+    .error-box .line .ok { color: #00e676; }
+  </style>
 </head>
 <body>
 
-<h2>Realtime Cluster Monitoring</h2>
+<h2>POV-Ray Cluster Dashboard</h2>
+<div class="subtitle" id="subtitle">Waiting for data...</div>
 
-<canvas id="chart" width="800" height="400"></canvas>
+<div class="queue-bar" id="queue-bar" style="display:none;">
+  <span class="queue-item"><span class="queue-badge badge-main" id="q-main">0</span> <span class="queue-label">Queue</span></span>
+  <span class="queue-item"><span class="queue-badge badge-failed" id="q-failed">0</span> <span class="queue-label">Failed</span></span>
+  <span class="queue-item"><span class="queue-badge badge-dead" id="q-dead">0</span> <span class="queue-label">Dead</span></span>
+  <span class="queue-item" style="margin-left:auto;gap:16px;">
+    <span><span style="color:#ff8f00;">&#x21bb;</span> <span id="r-total">0</span> <span class="queue-label">retries</span></span>
+    <span><span style="color:#e94560;">&#x2717;</span> <span id="r-dead">0</span> <span class="queue-label">dead</span></span>
+  </span>
+</div>
+
+<div class="container">
+  <div class="chart-box">
+    <canvas id="chart" width="700" height="300"></canvas>
+  </div>
+
+  <div class="stats-table">
+    <h3 style="margin-top:0;">Node Resources</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Node</th>
+          <th>CPU</th>
+          <th>RAM</th>
+          <th>Disk R/W</th>
+          <th>Net RX/TX</th>
+          <th>Temp</th>
+          <th>Retries</th>
+        </tr>
+      </thead>
+      <tbody id="stats-body"></tbody>
+    </table>
+    <div id="no-stats" style="color:#888;margin-top:10px;">Waiting for node data...</div>
+  </div>
+</div>
+
+<div class="heatmap-box">
+  <div class="controls">
+    <label for="metric-select">Heatmap:</label>
+    <select id="metric-select">
+      <option value="cpu">CPU %</option>
+      <option value="mem">RAM %</option>
+      <option value="fps" selected>FPS</option>
+      <option value="disk_r">Disk Read</option>
+      <option value="disk_w">Disk Write</option>
+      <option value="net_rx">Net RX</option>
+      <option value="net_tx">Net TX</option>
+      <option value="temp">CPU Temp</option>
+    </select>
+    <div class="legend">
+      <span>low</span>
+      <div class="legend-bar"></div>
+      <span>high</span>
+    </div>
+  </div>
+  <canvas id="heatmap"></canvas>
+</div>
+
+<div class="error-box" id="error-box" style="display:none;">
+  <div class="title">&#x26A0; errors.log</div>
+  <div id="error-lines"></div>
+</div>
 
 <script>
 const socket = io();
@@ -18,40 +118,215 @@ const ctx = document.getElementById('chart').getContext('2d');
 let chart = new Chart(ctx, {
     type: 'line',
     data: { labels: [], datasets: [] },
-    options: { animation: false, scales: { y: { beginAtZero: true } } }
+    options: { animation: false, scales: { y: { beginAtZero: true, title: { display: true, text: 'FPS' } } } }
 });
 
-let history = {};
+let snapshots = [];
+let nodeSet = new Set();
+const MAX_SNAPSHOTS = 40;
+
+function fmt(n) {
+  if (n >= 1048576) return (n/1048576).toFixed(1)+'M';
+  if (n >= 1024) return (n/1024).toFixed(1)+'K';
+  return n;
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
 
 socket.on("update", (data) => {
     const time = new Date().toLocaleTimeString();
+    document.getElementById('subtitle').textContent = 'Last update: ' + time;
+
+    if (data._queues) {
+        document.getElementById('queue-bar').style.display = 'flex';
+        document.getElementById('q-main').textContent = data._queues.main;
+        document.getElementById('q-failed').textContent = data._queues.failed;
+        document.getElementById('q-dead').textContent = data._queues.dead;
+    }
+    if (data._retry) {
+        document.getElementById('r-total').textContent = data._retry.total_retries;
+        document.getElementById('r-dead').textContent = data._retry.total_dead;
+    }
+
+    if (data._errors && data._errors.length > 0) {
+        document.getElementById('error-box').style.display = 'block';
+        const el = document.getElementById('error-lines');
+        el.innerHTML = data._errors.map(l => {
+            const parts = l.split(' ');
+            const ts = parts[0] ? '<span class="ts">' + esc(parts[0]) + '</span>' : '';
+            const rest = parts.slice(1).join(' ');
+            let cls = '';
+            if (rest.includes('DEAD')) cls = 'bad';
+            else if (rest.includes('backoff')) cls = 'ok';
+            else if (rest.includes('failed')) cls = 'bad';
+            return '<div class="line">' + ts + ' ' + esc(rest) + '</div>';
+        }).join('');
+    }
+
+    Object.keys(data).forEach(n => {
+        if (n.startsWith('_')) return;
+        nodeSet.add(n);
+    });
+    const nodes = [...nodeSet].filter(n => !n.startsWith('_')).sort();
+
     chart.data.labels.push(time);
-
-    Object.keys(data).forEach(node => {
-        if (!history[node]) {
-            history[node] = [];
-            chart.data.datasets.push({
-                label: node,
-                data: [],
-                fill: false,
-                tension: 0.1
-            });
+    nodes.forEach(node => {
+        if (!chart.data.datasets.some(d => d.label === node)) {
+            chart.data.datasets.push({ label: node, data: [], fill: false, tension: 0.1 });
         }
-        history[node].push(data[node].fps);
     });
-
     chart.data.datasets.forEach(ds => {
-        const node = ds.label;
-        ds.data.push(history[node].slice(-1)[0] || 0);
+        ds.data.push(data[ds.label] ? data[ds.label].fps : 0);
     });
-
     if (chart.data.labels.length > 30) {
         chart.data.labels.shift();
         chart.data.datasets.forEach(ds => ds.data.shift());
     }
-
     chart.update();
+
+    snapshots.push({ time, data: JSON.parse(JSON.stringify(data)), nodes });
+    if (snapshots.length > MAX_SNAPSHOTS) snapshots.shift();
+
+    const tbody = document.getElementById('stats-body');
+    tbody.innerHTML = '';
+    let hasStats = false;
+    nodes.forEach(node => {
+        const d = data[node];
+        if (!d || !d.stats) return;
+        hasStats = true;
+        const s = d.stats;
+
+        const hasRetry = d.retries && d.retries > 0;
+        const hasDead = d.dead && d.dead > 0;
+        let rowClass = '';
+        if (hasDead) rowClass = 'dead-row';
+        else if (hasRetry) rowClass = 'retry-row';
+
+        const tr = document.createElement('tr');
+        if (rowClass) tr.className = rowClass;
+        tr.innerHTML = `
+            <td><b>${node}</b></td>
+            <td class="num">
+              <div class="bar-bg"><div class="bar-fill bar-cpu" style="width:${Math.min(s.cpu,100)}%"></div></div>
+              ${s.cpu}%
+            </td>
+            <td class="num">
+              <div class="bar-bg"><div class="bar-fill bar-mem" style="width:${Math.min(s.mem,100)}%"></div></div>
+              ${s.mem}%
+            </td>
+            <td class="num">${fmt(s.disk_r)}/s &nbsp; ${fmt(s.disk_w)}/s</td>
+            <td class="num">${fmt(s.net_rx)}/s &nbsp; ${fmt(s.net_tx)}/s</td>
+            <td class="num">${s.temp ? s.temp + '°C' : '<span style="color:#555;">-</span>'}</td>
+            <td class="num">
+              ${d.retries ? '<span style="color:#ff8f00;">R:'+d.retries+'</span>' : ''}
+              ${d.dead ? ' <span style="color:#e94560;">D:'+d.dead+'</span>' : ''}
+              ${!d.retries && !d.dead ? '<span style="color:#555;">-</span>' : ''}
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+    document.getElementById('no-stats').style.display = hasStats ? 'none' : 'block';
+
+    drawHeatmap();
 });
+
+function getMetricValue(snapshot, node, metric) {
+    const d = snapshot.data[node];
+    if (!d) return 0;
+    if (metric === 'fps') return d.fps || 0;
+    if (d.stats && d.stats[metric] !== undefined) return d.stats[metric];
+    return 0;
+}
+
+function getMetricMax(metric, nodes) {
+    if (metric === 'cpu' || metric === 'mem') return 100;
+    let mx = 0;
+    for (const snap of snapshots) {
+        for (const node of nodes) {
+            mx = Math.max(mx, getMetricValue(snap, node, metric));
+        }
+    }
+    return mx || 1;
+}
+
+function heatColor(t) {
+    t = Math.max(0, Math.min(1, t));
+    let r, g, b;
+    if (t < 0.5) {
+        const v = t * 2;
+        r = Math.round(0 + v * 230);
+        g = Math.round(230 + v * 25);
+        b = Math.round(118 - v * 118);
+    } else {
+        const v = (t - 0.5) * 2;
+        r = Math.round(230 + v * 25);
+        g = Math.round(255 - v * 255);
+        b = 0;
+    }
+    return `rgb(${r},${g},${b})`;
+}
+
+function drawHeatmap() {
+    const canvas = document.getElementById('heatmap');
+    const metric = document.getElementById('metric-select').value;
+    const nodes = [...nodeSet].filter(n => !n.startsWith('_')).sort();
+    if (nodes.length === 0 || snapshots.length === 0) return;
+
+    const containerW = canvas.parentElement.clientWidth - 30;
+    const cellH = 24;
+    const labelW = 110, headerH = 24;
+    const pad = 10;
+    const cols = snapshots.length;
+    const rows = nodes.length;
+    const cellW = cols > 0 ? Math.max(8, Math.floor((containerW - labelW - pad * 2) / cols)) : 20;
+    const w = labelW + cols * cellW + pad * 2;
+    const h = headerH + rows * cellH + pad * 2;
+
+    canvas.width = w;
+    canvas.height = h;
+    const c = canvas.getContext('2d');
+
+    c.fillStyle = '#16213e';
+    c.fillRect(0, 0, w, h);
+
+    const maxVal = getMetricMax(metric, nodes);
+
+    for (let col = 0; col < cols; col++) {
+        const snap = snapshots[col];
+        for (let row = 0; row < rows; row++) {
+            const node = nodes[row];
+            const val = getMetricValue(snap, node, metric);
+            const t = maxVal > 0 ? val / maxVal : 0;
+            const x = Math.round(labelW + col * cellW + pad);
+            const y = Math.round(headerH + row * cellH + pad);
+            c.fillStyle = heatColor(t);
+            c.fillRect(x, y, cellW - 1, cellH - 1);
+        }
+    }
+
+    c.fillStyle = '#eee';
+    c.font = '11px monospace';
+    c.textBaseline = 'middle';
+    for (let row = 0; row < rows; row++) {
+        c.fillText(nodes[row], pad, headerH + row * cellH + cellH / 2 + pad);
+    }
+    for (let col = 0; col < cols; col++) {
+        const skip = cols > 20 ? Math.ceil(cols / 15) : 1;
+        if (col % skip === 0) {
+            c.fillStyle = '#aaa';
+            c.font = '9px monospace';
+            c.textAlign = 'center';
+            c.fillText(snapshots[col].time, labelW + col * cellW + cellW / 2 + pad, headerH / 2 + pad);
+        }
+    }
+}
+
+document.getElementById('metric-select').addEventListener('change', drawHeatmap);
+window.addEventListener('resize', drawHeatmap);
 </script>
 
 </body>

@@ -12,6 +12,10 @@ logs/
 .frames
 animation_render.ini
 frame_queue.txt
+failed_queue.txt
+dead_queue.txt
+errors.log
+.retry_counts/
 best_config.txt
 progress.log
 queue.lock
