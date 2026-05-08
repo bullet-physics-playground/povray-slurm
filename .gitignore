@@ -3,22 +3,15 @@ frames/*.png
 
 # Logs
 logs/
-*.log
+
+# SQLite database
+render.db
 
 # Temporary files
 *.tmp/
 
 # Generated config files
-.frames
 animation_render.ini
-frame_queue.txt
-failed_queue.txt
-dead_queue.txt
-errors.log
-.retry_counts/
-best_config.txt
-progress.log
-queue.lock
 
 # Output video
 *.mp4

@@ -8,26 +8,26 @@
 #SBATCH --cpus-per-task=4
 
 INI_FILE="animation_render.ini"
-FRAME_DIR="frames"
 SAMPLES=6
-
-FAILED_QUEUE="failed_queue.txt"
-DEAD_QUEUE="dead_queue.txt"
-LOCK="queue.lock"
-RETRY_LOG="retry.log"
-ERROR_LOG="errors.log"
-MAX_RETRIES=3
-RETRY_DIR=".retry_counts"
-RETRY_HOST_DIR=".retry_hosts"
 BACKOFF_BASE=5
 
-read PAR THREADS < best_config.txt
-read FRAMES < .frames
+mkdir -p "$HOME/.povray/3.8"
+[ -f "$HOME/.povray/3.8/povray.conf" ] || cat > "$HOME/.povray/3.8/povray.conf" << 'EOF'
+[File I/O Security]
+none
+[Shellout Security]
+allowed
+EOF
 
-FRAME=$SLURM_ARRAY_TASK_ID
-NUM=$FRAME
+PAR=$(python3 db.py config par)
+THREADS=$(python3 db.py config threads)
 
-NODE_STATS="node_stats.log"
+JOB_ID=${JOB_ID:-1}
+FRAME_NUM=$SLURM_ARRAY_TASK_ID
+FRAME_REF="${JOB_ID}:${FRAME_NUM}"
+
+read JOB_ID2 FRAME_NUM2 TOTAL_FRAMES OUT_DIR JOB_NAME PRIORITY <<< "$(python3 db.py frame-info "$FRAME_REF")"
+mkdir -p "$OUT_DIR"
 
 stats_collector() {
   local host=$(hostname)
@@ -77,7 +77,7 @@ stats_collector() {
       local disk_w_rate=$(( (disk_w - prev_disk_w) * 512 / 5 ))
       local net_rx_rate=$(( (net_rx - prev_net_rx) / 5 ))
       local net_tx_rate=$(( (net_tx - prev_net_tx) / 5 ))
-      echo "$(date +%s) $host $cpu_pct $mem_pct $disk_r_rate $disk_w_rate $net_rx_rate $net_tx_rate $temp" >> "$NODE_STATS"
+      python3 db.py stats-add "$(date +%s)" "$host" "$cpu_pct" "$mem_pct" "$disk_r_rate" "$disk_w_rate" "$net_rx_rate" "$net_tx_rate" "$temp"
     fi
     prev_idle=$idle
     prev_total=$total
@@ -88,64 +88,20 @@ stats_collector() {
   done
 }
 
-enqueue() {
-  local q=$1
-  local frame=$2
-  exec 9>$LOCK
-  flock -x 9
-  echo "$frame" >> "$q"
-  flock -u 9
-}
-
-handle_failure() {
-  local frame=$1
-  local node=$2
-  local details=$3
-  mkdir -p "$RETRY_DIR" "$RETRY_HOST_DIR"
-  local count_file="$RETRY_DIR/$frame"
-  local count=0
-  [ -f "$count_file" ] && count=$(cat "$count_file")
-  count=$((count + 1))
-  echo "$count" > "$count_file"
-  echo "$node" > "$RETRY_HOST_DIR/$frame"
-
-  echo "$(date +%s) $node frame=$frame attempt=$count failed $details" >> "$ERROR_LOG"
-
-  if [ "$count" -ge "$MAX_RETRIES" ]; then
-    enqueue "$DEAD_QUEUE" "$frame"
-    echo "$(date +%s) $node $frame $count dead" >> "$RETRY_LOG"
-    echo "$(date +%s) $node frame=$frame attempt=$count DEAD" >> "$ERROR_LOG"
-  else
-    enqueue "$FAILED_QUEUE" "$frame"
-    echo "$(date +%s) $node $frame $count retry" >> "$RETRY_LOG"
-    echo "$(date +%s) $node frame=$frame attempt=$count queued for retry (different node required)" >> "$ERROR_LOG"
-  fi
-}
-
-backoff_wait() {
-  local frame=$1
-  local count=$(cat "$RETRY_DIR/$frame" 2>/dev/null || echo 0)
-  [ "$count" -le 1 ] && return
-  local wait=$((BACKOFF_BASE * (2 ** (count - 2))))
-  echo "$(date +%s) $(hostname) frame=$frame backoff=${wait}s attempt=$count" >> "$ERROR_LOG"
-  sleep "$wait"
-}
-
-mkdir -p "$FRAME_DIR"
 stats_collector & STATS_PID=$!
 
-TMP="/tmp/frame_${NUM}_$$"
+TMP="/tmp/frame_${JOB_ID}_${FRAME_NUM}_$$"
 mkdir -p "$TMP"
 
-START=$(awk "BEGIN {print ($NUM-1)/$FRAMES}")
-END=$(awk "BEGIN {print $NUM/$FRAMES}")
+START=$(awk "BEGIN {print ($FRAME_NUM-1)/$TOTAL_FRAMES}")
+END=$(awk "BEGIN {print $FRAME_NUM/$TOTAL_FRAMES}")
 DELTA=$(awk "BEGIN {print ($END-$START)/$SAMPLES}")
 
 pids=()
 fail=0
 for ((i=0;i<SAMPLES;i++)); do
   CLOCK=$(awk "BEGIN {print $START + $i*$DELTA}")
-  povray "$INI_FILE" -V +SF$NUM +EF$NUM +KI$CLOCK +KF$CLOCK -WT$THREADS -D +O"$TMP/sub_$i.png" &
+  povray "$INI_FILE" -CC -V +SF$FRAME_NUM +EF$FRAME_NUM +KI$CLOCK +KF$CLOCK -WT$THREADS -D +O"$TMP/sub_$i.png" &
   pids+=($!)
 done
 for pid in "${pids[@]}"; do
@@ -153,6 +109,7 @@ for pid in "${pids[@]}"; do
 done
 
 if [ $fail -eq 0 ]; then
+  FRAME_PAD=$(printf "%04d" "$FRAME_NUM")
   python3 -c "
 from PIL import Image
 import glob
@@ -170,7 +127,7 @@ for y in range(imgs[0].size[1]):
         b = sum(p[i][2] for p in px_in) // len(imgs)
         px_out.append((r, g, b))
 img.putdata(px_out)
-img.save('$FRAME_DIR/frame_$(printf "%04d" $FRAME).png')
+img.save('$OUT_DIR/frame_$FRAME_PAD.png')
 " || fail=1
 fi
 
@@ -178,7 +135,7 @@ rm -rf "$TMP"
 kill $STATS_PID 2>/dev/null
 
 if [ $fail -eq 0 ]; then
-  echo "$(date +%s) $(hostname) $(printf "%04d" $FRAME)" >> progress.log
+  python3 db.py complete "$FRAME_REF" "$(hostname)"
 else
-  handle_failure "$(printf "%04d" $FRAME)" "$(hostname)" "povray_exit=$fail"
+  python3 db.py fail "$FRAME_REF" "$(hostname)" "povray_exit=$fail"
 fi

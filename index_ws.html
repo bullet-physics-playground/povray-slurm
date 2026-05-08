@@ -49,6 +49,11 @@
 <h2>POV-Ray Cluster Dashboard</h2>
 <div class="subtitle" id="subtitle">Waiting for data...</div>
 
+<div id="queued-jobs" style="display:none;background:#16213e;padding:10px 15px;border-radius:8px;margin-bottom:10px;">
+  <span style="color:#ff8f00;font-weight:bold;">&#x1F4CB; Queued Jobs</span>
+  <div id="queued-jobs-list" style="margin-top:6px;"></div>
+</div>
+
 <div class="queue-bar" id="queue-bar" style="display:none;">
   <span class="queue-item"><span class="queue-badge badge-main" id="q-main">0</span> <span class="queue-label">Queue</span></span>
   <span class="queue-item"><span class="queue-badge badge-failed" id="q-failed">0</span> <span class="queue-label">Failed</span></span>
@@ -107,7 +112,7 @@
 </div>
 
 <div class="error-box" id="error-box" style="display:none;">
-  <div class="title">&#x26A0; errors.log</div>
+  <div class="title">&#x26A0; Error Log</div>
   <div id="error-lines"></div>
 </div>
 
@@ -150,6 +155,23 @@ socket.on("update", (data) => {
     if (data._retry) {
         document.getElementById('r-total').textContent = data._retry.total_retries;
         document.getElementById('r-dead').textContent = data._retry.total_dead;
+    }
+
+if (data._queued_jobs && data._queued_jobs.length > 0) {
+        document.getElementById('queued-jobs').style.display = 'block';
+        const qlist = document.getElementById('queued-jobs-list');
+        qlist.innerHTML = data._queued_jobs.map(j => {
+            const pct = j.total_frames > 0 ? (j.completed / j.total_frames * 100).toFixed(1) : 0;
+            const remaining = j.total_frames - j.completed;
+            return '<div style="padding:3px 0;font-size:13px;border-bottom:1px solid #0f3460;">' +
+                '<span style="color:#eee;font-weight:bold;">' + esc(j.name) + '</span> ' +
+                '<span style="color:#888;">priority:</span> <span style="color:#ffea00;font-weight:bold;">' + j.priority + '</span> ' +
+                '<span style="color:#888;">progress:</span> <span style="color:#00e676;">' + j.completed + '/' + j.total_frames + ' (' + pct + '%)</span> ' +
+                '<span style="color:#888;">frames:</span> <span style="color:#eee;">' + j.completed + ' done, ' + j.failed + ' failed, ' + j.dead + ' dead, ' + j.pending + ' pending</span>' +
+                '</div>';
+        }).join('');
+    } else {
+        document.getElementById('queued-jobs').style.display = 'none';
     }
 
     if (data._errors && data._errors.length > 0) {

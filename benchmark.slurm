@@ -11,6 +11,14 @@ TMP_DIR="/tmp/pov_bench_$SLURM_JOB_ID"
 SAMPLES=6
 TOTAL_CPUS=$SLURM_CPUS_PER_TASK
 
+mkdir -p "$HOME/.povray/3.8"
+[ -f "$HOME/.povray/3.8/povray.conf" ] || cat > "$HOME/.povray/3.8/povray.conf" << 'EOF'
+[File I/O Security]
+none
+[Shellout Security]
+allowed
+EOF
+
 mkdir -p "$TMP_DIR" logs
 
 BEST_TIME=999999
@@ -45,4 +53,6 @@ for PAR in 1 2 4 8 16 32 64 128; do
   rm -f "$TMP_DIR"/*.png
 done
 
-echo $BEST > best_config.txt
+python3 db.py config par $(echo $BEST | awk '{print $1}')
+python3 db.py config threads $(echo $BEST | awk '{print $2}')
+echo "Best config: $BEST"

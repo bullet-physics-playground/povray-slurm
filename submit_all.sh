@@ -16,30 +16,51 @@ usage() {
   exit 1
 }
 
+check() {
+  if [ $? -eq 0 ]; then
+    printf '\033[32m\xe2\x9c\x93\033[0m %s\n' "$1"
+  else
+    printf '\033[31m\xe2\x9c\x97\033[0m %s\n' "$1"
+    exit 1
+  fi
+}
+
 [ "$1" = "-h" ] || [ "$1" = "--help" ] && usage
 
 FRAMES=${1:-120}
 WIDTH=${2:-1280}
 HEIGHT=${3:-720}
 
-mkdir -p logs frames
+mkdir -p logs
 
-rm -f frames/*.png
+JOB_ID=$(python3 db.py job-create "render ${FRAMES}f ${WIDTH}x${HEIGHT}" 0 "$FRAMES" "$WIDTH" "$HEIGHT")
+check "Created job"
 
-echo "$FRAMES" > .frames
+JOB_DIR=$(python3 db.py job-info "$JOB_ID" | python3 -c "import json,sys; print(json.load(sys.stdin).get('output_dir','frames'))")
+check "Got job info"
+
+mkdir -p "$JOB_DIR"
+check "Created output directory"
+
+rm -f "$JOB_DIR"/*.png
+check "Cleaned output directory"
 
 sed -e "s/FRAME_COUNT/$FRAMES/" \
     -e "s/WIDTH_VAL/$WIDTH/" \
     -e "s/HEIGHT_VAL/$HEIGHT/" \
     animation.ini > animation_render.ini
+check "Generated animation.ini"
 
-./generate_queue.sh "$FRAMES"
+echo "Created job $JOB_ID (priority 0) — $FRAMES frames"
 
 BENCH=$(sbatch benchmark.slurm | awk '{print $4}')
+check "Submitted benchmark job"
 echo "Benchmark job: $BENCH"
 
-JOB=$(sbatch --dependency=afterok:$BENCH --array=1-$FRAMES --nodes=1 frame.slurm | awk '{print $4}')
+JOB=$(sbatch --dependency=afterok:$BENCH --array=1-$FRAMES --nodes=1 --export=JOB_ID=$JOB_ID frame.slurm | awk '{print $4}')
+check "Submitted frame rendering job"
 echo "Frame rendering job: $JOB"
 
 FFMPEG=$(sbatch --dependency=afterok:$JOB ffmpeg.slurm | awk '{print $4}')
+check "Submitted ffmpeg job"
 echo "FFmpeg job: $FFMPEG"

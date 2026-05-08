@@ -1,25 +1,13 @@
 #!/usr/bin/env bash
 
-QUEUE="frame_queue.txt"
-FAILED_QUEUE="failed_queue.txt"
-DEAD_QUEUE="dead_queue.txt"
-LOCK="queue.lock"
-LOG_FILE="progress.log"
-RETRY_LOG="retry.log"
-ERROR_LOG="errors.log"
-MAX_RETRIES=3
-RETRY_DIR=".retry_counts"
-RETRY_HOST_DIR=".retry_hosts"
+DB="render.db"
 BACKOFF_BASE=5
 
 INI_FILE="animation_render.ini"
-FRAME_DIR="frames"
 SAMPLES=6
 
-read PAR THREADS < best_config.txt
-read FRAMES < .frames
-
-NODE_STATS="node_stats.log"
+PAR=$(python3 db.py config par)
+THREADS=$(python3 db.py config threads)
 
 stats_collector() {
   local host=$(hostname)
@@ -69,7 +57,7 @@ stats_collector() {
       local disk_w_rate=$(( (disk_w - prev_disk_w) * 512 / 5 ))
       local net_rx_rate=$(( (net_rx - prev_net_rx) / 5 ))
       local net_tx_rate=$(( (net_tx - prev_net_tx) / 5 ))
-      echo "$(date +%s) $host $cpu_pct $mem_pct $disk_r_rate $disk_w_rate $net_rx_rate $net_tx_rate $temp" >> "$NODE_STATS"
+      python3 db.py stats-add "$(date +%s)" "$host" "$cpu_pct" "$mem_pct" "$disk_r_rate" "$disk_w_rate" "$net_rx_rate" "$net_tx_rate" "$temp"
     fi
     prev_idle=$idle
     prev_total=$total
@@ -80,94 +68,28 @@ stats_collector() {
   done
 }
 
-dequeue() {
-  local q=$1
-  exec 9>$LOCK
-  flock -x 9
-  local frame=$(head -n 1 "$q" 2>/dev/null)
-  [ -n "$frame" ] && sed -i '1d' "$q"
-  flock -u 9
-  echo "$frame"
-}
-
-enqueue() {
-  local q=$1
-  local frame=$2
-  exec 9>$LOCK
-  flock -x 9
-  echo "$frame" >> "$q"
-  flock -u 9
-}
-
-retry_count() {
-  local frame=$1
-  mkdir -p "$RETRY_DIR"
-  local count_file="$RETRY_DIR/$frame"
-  local count=0
-  [ -f "$count_file" ] && count=$(cat "$count_file")
-  echo "$count"
-}
-
-handle_failure() {
-  local frame=$1
-  local node=$2
-  local details=$3
-  mkdir -p "$RETRY_DIR" "$RETRY_HOST_DIR"
-  local count_file="$RETRY_DIR/$frame"
-  local count=0
-  [ -f "$count_file" ] && count=$(cat "$count_file")
-  count=$((count + 1))
-  echo "$count" > "$count_file"
-  echo "$node" > "$RETRY_HOST_DIR/$frame"
-
-  echo "$(date +%s) $node frame=$frame attempt=$count failed $details" >> "$ERROR_LOG"
-
-  if [ "$count" -ge "$MAX_RETRIES" ]; then
-    enqueue "$DEAD_QUEUE" "$frame"
-    echo "$(date +%s) $node $frame $count dead" >> "$RETRY_LOG"
-    echo "$(date +%s) $node frame=$frame attempt=$count DEAD" >> "$ERROR_LOG"
-  else
-    enqueue "$FAILED_QUEUE" "$frame"
-    echo "$(date +%s) $node $frame $count retry" >> "$RETRY_LOG"
-    echo "$(date +%s) $node frame=$frame attempt=$count queued for retry (different node required)" >> "$ERROR_LOG"
-  fi
-}
-
-backoff_wait() {
-  local frame=$1
-  local count=$(retry_count "$frame")
-  [ "$count" -le 1 ] && return
-  local wait=$((BACKOFF_BASE * (2 ** (count - 2))))
-  echo "$(date +%s) $(hostname) frame=$frame backoff=${wait}s attempt=$count" >> "$ERROR_LOG"
-  sleep "$wait"
-}
-
-mkdir -p "$FRAME_DIR"
-stats_collector & STATS_PID=$!
-
 while true; do
-  FRAME=$(dequeue "$QUEUE")
-  FROM_FAILED=0
-  [ -z "$FRAME" ] && { FRAME=$(dequeue "$FAILED_QUEUE"); FROM_FAILED=1; }
-  [ -z "$FRAME" ] && break
+  FRAME_REF=$(python3 db.py dequeue "$(hostname)")
+  [ -z "$FRAME_REF" ] && break
 
-  if [ $FROM_FAILED -eq 1 ]; then
-    local last_host=""
-    [ -f "$RETRY_HOST_DIR/$FRAME" ] && last_host=$(cat "$RETRY_HOST_DIR/$FRAME")
-    if [ "$last_host" = "$(hostname)" ]; then
-      enqueue "$FAILED_QUEUE" "$FRAME"
-      sleep 2
-      continue
-    fi
-    backoff_wait "$FRAME"
+  JOB_ID="${FRAME_REF%%:*}"
+  FRAME_NUM="${FRAME_REF#*:}"
+
+  COUNT=$(python3 db.py attempts "$FRAME_REF")
+  if [ "$COUNT" -ge 1 ]; then
+    python3 db.py backoff-wait "$(hostname)" "$FRAME_REF"
   fi
 
-  NUM=$(echo $FRAME | sed 's/^0*//')
-  TMP="/tmp/frame_${NUM}_$$"
+  read JOB_ID2 FRAME_NUM2 TOTAL_FRAMES OUT_DIR JOB_NAME PRIORITY <<< "$(python3 db.py frame-info "$FRAME_REF")"
+
+  mkdir -p "$OUT_DIR"
+
+  NUM=$FRAME_NUM
+  TMP="/tmp/frame_${JOB_ID}_${NUM}_$$"
   mkdir -p "$TMP"
 
-  START=$(awk "BEGIN {print ($NUM-1)/$FRAMES}")
-  END=$(awk "BEGIN {print $NUM/$FRAMES}")
+  START=$(awk "BEGIN {print ($NUM-1)/$TOTAL_FRAMES}")
+  END=$(awk "BEGIN {print $NUM/$TOTAL_FRAMES}")
   DELTA=$(awk "BEGIN {print ($END-$START)/$SAMPLES}")
 
   pids=()
@@ -185,16 +107,15 @@ while true; do
   done
 
   if [ $fail -eq 0 ]; then
-    convert "$TMP"/sub_*.png -evaluate-sequence mean "$FRAME_DIR/frame_$FRAME.png" || fail=1
+    FRAME_PAD=$(printf "%04d" "$FRAME_NUM")
+    convert "$TMP"/sub_*.png -evaluate-sequence mean "$OUT_DIR/frame_$FRAME_PAD.png" || fail=1
   fi
 
   if [ $fail -eq 0 ]; then
-    echo "$(date +%s) $(hostname) $FRAME" >> $LOG_FILE
+    python3 db.py complete "$FRAME_REF" "$(hostname)"
   else
-    handle_failure "$FRAME" "$(hostname)" "povray_exit=$fail"
+    python3 db.py fail "$FRAME_REF" "$(hostname)" "povray_exit=$fail"
   fi
 
   rm -rf "$TMP"
 done
-
-kill $STATS_PID 2>/dev/null
