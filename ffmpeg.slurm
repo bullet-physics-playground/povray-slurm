@@ -15,4 +15,11 @@ if [ -n "$JOB_ID" ]; then
   fi
 fi
 
-ffmpeg -y -framerate 30 -i frames/frame_%04d.png -c:v libx264 -pix_fmt yuv420p output.mp4
+for d in frames/*/; do
+  if ls "$d"frame_*.png &>/dev/null 2>&1; then
+    JOB_ID=$(basename "$d" | sed 's/^job_\([0-9]*\)_.*/\1/')
+    ffmpeg -y -framerate 30 -i "${d}frame_%04d.png" -c:v libx264 -pix_fmt yuv420p "output_job${JOB_ID}.mp4"
+    exit 0
+  fi
+done
+ffmpeg -y -framerate 30 -i "frames/frame_%04d.png" -c:v libx264 -pix_fmt yuv420p output.mp4

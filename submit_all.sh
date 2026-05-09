@@ -63,6 +63,6 @@ JOB=$(sbatch --dependency=afterok:$BENCH --array=1-$FRAMES --nodes=1 --export=JO
 check "Submitted frame rendering job"
 echo "Frame rendering job: $JOB"
 
-FFMPEG=$(sbatch --dependency=afterany:$JOB ffmpeg.slurm | awk '{print $4}')
+FFMPEG=$(sbatch --dependency=afterany:$JOB --export=JOB_ID=$JOB_ID ffmpeg.slurm | awk '{print $4}')
 check "Submitted ffmpeg job"
 echo "FFmpeg job: $FFMPEG"
