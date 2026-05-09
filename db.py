@@ -381,8 +381,8 @@ def cmd_progress(args):
     result = {}
     for node, total, recent in cur:
         recent = recent or 0
-        fph = recent * 360.0
-        result[node] = {"fph": round(fph, 2), "total": total}
+        fph = recent / 10.0 * 3600
+        result[node] = {"fph": fph, "total": total}
     print(json.dumps(result))
 
 def cmd_stats_add(args):
