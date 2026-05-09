@@ -95,7 +95,7 @@
     <select id="metric-select">
       <option value="cpu">CPU %</option>
       <option value="mem">RAM %</option>
-      <option value="fps" selected>FPS</option>
+      <option value="fph" selected>FPH</option>
       <option value="disk_r">Disk Read</option>
       <option value="disk_w">Disk Write</option>
       <option value="net_rx">Net RX</option>
@@ -123,7 +123,7 @@ const ctx = document.getElementById('chart').getContext('2d');
 let chart = new Chart(ctx, {
     type: 'line',
     data: { labels: [], datasets: [] },
-    options: { animation: false, scales: { y: { beginAtZero: true, title: { display: true, text: 'FPS' } } } }
+    options: { animation: false, scales: { y: { beginAtZero: true, title: { display: true, text: 'Frames/Hour' } } } }
 });
 
 let snapshots = [];
@@ -202,7 +202,7 @@ if (data._queued_jobs && data._queued_jobs.length > 0) {
         }
     });
     chart.data.datasets.forEach(ds => {
-        ds.data.push(data[ds.label] ? data[ds.label].fps : 0);
+        ds.data.push(data[ds.label] ? data[ds.label].fph : 0);
     });
     if (chart.data.labels.length > 30) {
         chart.data.labels.shift();
@@ -259,7 +259,7 @@ if (data._queued_jobs && data._queued_jobs.length > 0) {
 function getMetricValue(snapshot, node, metric) {
     const d = snapshot.data[node];
     if (!d) return 0;
-    if (metric === 'fps') return d.fps || 0;
+    if (metric === 'fph') return d.fph || 0;
     if (d.stats && d.stats[metric] !== undefined) return d.stats[metric];
     return 0;
 }

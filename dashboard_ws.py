@@ -37,8 +37,8 @@ def fetch_progress(db):
     if rows:
         for node, total, recent in rows:
             recent = recent or 0
-            fps = recent / 10.0
-            result[node] = {"fps": round(fps, 2), "total": total}
+            fph = recent * 360.0
+            result[node] = {"fph": round(fph, 2), "total": total}
     return result
 
 def fetch_stats(db):

@@ -57,7 +57,7 @@ total = 0
 if data:
     for node, info in sorted(data.items()):
         total += info['total']
-        print(f'  {node:<10s}  {info[\"total\"]:>4d} frames  {info[\"fps\"]:>5.2f} fps')
+        print(f'  {node:<10s}  {info[\"total\"]:>4d} frames  {info[\"fph\"]:>7.2f} fph')
 else:
     print('  (no data)')
 print(f'  {\"-\"*30}')
