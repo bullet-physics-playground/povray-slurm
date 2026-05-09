@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-#SBATCH --job-name=pov_ffmpeg
-#SBATCH --time=00:10:00
+#SBATCH --job-name=ffmpeg
+#SBATCH --time=01:00:00
 #SBATCH --output=logs/ffmpeg.out
 #SBATCH --nodes=1
 

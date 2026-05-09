@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-#SBATCH --job-name=pov_frame
-#SBATCH --time=00:05:00
+#SBATCH --job-name=povray
+#SBATCH --time=01:00:00
 #SBATCH --output=logs/frame_%A_%a.out
 #SBATCH --array=1-FRAMES
 #SBATCH --nodes=1
