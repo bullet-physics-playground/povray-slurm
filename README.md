@@ -29,8 +29,6 @@ Each frame is rendered with motion blur by averaging multiple time samples, then
 | `submit_all.sh` | Full-pipeline orchestrator: runs `db.py init` to create the database, submits `benchmark.slurm` to find optimal PAR/THREADS, then submits `frame.slurm` as a dependent array job (`--dependency=afterok`). After the array completes, submits `ffmpeg.slurm` to encode the rendered frames to MP4. Accepts optional `FRAMES`, `WIDTH`, `HEIGHT` arguments. |
 | `generate_queue.sh` | Wrapper around `db.py init` to initialize the database with a given number of frames. |
 | `ffmpeg.slurm` | Post-processing SLURM job that encodes all rendered PNG frames in `frames/` into an MP4 video using libx264. Runs after the array job completes in the `submit_all.sh` pipeline. |
-| `worker_ws.sh` | Work-stealing worker that runs in an infinite loop on a cluster node. Each worker calls `db.py dequeue $(hostname)` to atomically claim the next available frame from the database. The dequeue operation first tries pending frames, then falls back to failed frames (skipping those failed by the current host). Before rendering a retried frame, it applies exponential backoff. Renders the frame with POV-Ray across multiple time samples (motion blur), averages them with ImageMagick, and calls `db.py complete` on success or `db.py fail` on failure. Also runs a background `stats_collector` that writes CPU%, RAM%, disk I/O, network I/O, and CPU temperature to the database via `db.py stats-add` every 5 seconds. |
-| `dynamic_ws.slurm` | Launcher that requests 4 nodes via SLURM, then uses `scontrol show hostnames` + `srun -w <node> worker_ws.sh &` to start one worker instance per node in the background. Workers synchronize via SQLite's WAL-mode locking on `render.db`. |
 | `dashboard_ws.py` | Real-time WebSocket server (Flask-SocketIO + eventlet) that serves the dashboard frontend and runs a background polling loop. Every second it queries `render.db` via `db.py` subcommands to get per-node FPS, live resource usage, retry analytics, queue sizes, and error log entries. Emits a single `update` event with all data to connected browsers. |
 | `index_ws.html` | Dashboard frontend with SocketIO client, Chart.js FPS line chart, live stats table with resource bars, interactive resource heatmap (canvas-based, 40-snapshot history, selectable metric), queue status cards, retry analytics table, and a live error log tail. Updates in real time from the WebSocket server. |
 | `monitor.sh` | Lightweight terminal-based monitor that queries `render.db` directly via `sqlite3` CLI and displays per-node frame counts and frames-per-second, refreshed every 2 seconds. |
@@ -61,15 +59,6 @@ All pipeline data is stored in a single SQLite database with WAL mode for concur
 ```
 
 Submits a benchmark job, then an array job where each SLURM task renders one frame independently. Failed frames are set to `failed` status in the database for the work-stealing workers to retry.
-
-### Work-Stealing Mode (dynamic pool)
-
-```bash
-./generate_queue.sh 120
-sbatch dynamic_ws.slurm
-```
-
-Launches `worker_ws.sh` on 4 nodes. Workers atomically claim frames from `render.db` via `db.py dequeue` — faster nodes automatically render more frames. Includes retry logic and system stats collection.
 
 ## Realtime Dashboard
 
