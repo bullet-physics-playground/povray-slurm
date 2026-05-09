@@ -49,7 +49,9 @@ sed -e "s/FRAME_COUNT/$FRAMES/" \
     -e "s/WIDTH_VAL/$WIDTH/" \
     -e "s/HEIGHT_VAL/$HEIGHT/" \
     animation.ini > animation_render.ini
-check "Generated animation.ini"
+check "Generated animation_render.ini"
+cp animation_render.ini "$JOB_DIR/"
+check "Copied animation_render.ini to job directory"
 
 echo "Created job $JOB_ID (priority 0) — $FRAMES frames"
 

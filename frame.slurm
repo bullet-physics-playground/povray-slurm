@@ -7,7 +7,6 @@
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=4
 
-INI_FILE="animation_render.ini"
 SAMPLES=6
 BACKOFF_BASE=5
 
@@ -28,6 +27,7 @@ FRAME_REF="${JOB_ID}:${FRAME_NUM}"
 
 read JOB_ID2 FRAME_NUM2 TOTAL_FRAMES OUT_DIR JOB_NAME PRIORITY <<< "$(python3 db.py frame-info "$FRAME_REF")"
 mkdir -p "$OUT_DIR"
+INI_FILE="$OUT_DIR/animation_render.ini"
 
 stats_collector() {
   local host=$(hostname)
