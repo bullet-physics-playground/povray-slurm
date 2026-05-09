@@ -107,13 +107,6 @@ The dashboard queries this table and displays live per-node resource usage.
 - **WAL mode**: SQLite Write-Ahead Logging allows concurrent readers and a single writer without blocking.
 - **Busy timeout**: Set to 5 seconds to retry automatically on contention.
 
-## Manual Video Encoding
-
-```bash
-ffmpeg -framerate 30 -i frames/frame_%04d.png \
-  -c:v libx264 -pix_fmt yuv420p output.mp4
-```
-
 ## License
 
 See [LICENSE](LICENSE) file.
