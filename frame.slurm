@@ -7,7 +7,7 @@
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=4
 
-SAMPLES=6
+SAMPLES=1
 BACKOFF_BASE=5
 
 mkdir -p "$HOME/.povray/3.8"
