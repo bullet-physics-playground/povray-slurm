@@ -157,12 +157,13 @@ def cmd_job_create(args):
     width = int(args[3]) if len(args) > 3 else None
     height = int(args[4]) if len(args) > 4 else None
     db = get_db()
-    output_dir = f"frames/job_{priority}_{name.replace(' ', '_')}"
     cur = db.execute(
-        "INSERT INTO jobs(name, priority, status, total_frames, width, height, output_dir) VALUES (?, ?, 'active', ?, ?, ?, ?)",
-        (name, priority, total_frames, width, height, output_dir)
+        "INSERT INTO jobs(name, priority, status, total_frames, width, height) VALUES (?, ?, 'active', ?, ?, ?)",
+        (name, priority, total_frames, width, height)
     )
     job_id = cur.lastrowid
+    output_dir = f"frames/job_{job_id}_{name.replace(' ', '_')}"
+    db.execute("UPDATE jobs SET output_dir = ? WHERE id = ?", (output_dir, job_id))
     for i in range(1, total_frames + 1):
         db.execute("INSERT INTO frames(job_id, frame_number, status) VALUES (?, ?, 'pending')", (job_id, i))
     print(job_id)
