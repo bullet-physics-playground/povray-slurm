@@ -32,8 +32,8 @@ mkdir -p "$OUT_DIR"
 stats_collector() {
   local host=$(hostname)
   local prev_idle=0 prev_total=0 prev_disk_r=0 prev_disk_w=0 prev_net_rx=0 prev_net_tx=0
+  local interval=5
   while true; do
-    sleep 5
     local cpu=$(grep '^cpu ' /proc/stat)
     local idle=$(awk '{print $5}' <<< "$cpu")
     local total=0
@@ -73,10 +73,10 @@ stats_collector() {
       local idle_delta=$((idle - prev_idle))
       local cpu_pct=$(awk "BEGIN {printf \"%.1f\", (($cpu_delta-$idle_delta)/$cpu_delta)*100}")
       local mem_pct=$(awk "BEGIN {printf \"%.1f\", ($mem_used/$mem_total)*100}")
-      local disk_r_rate=$(( (disk_r - prev_disk_r) * 512 / 5 ))
-      local disk_w_rate=$(( (disk_w - prev_disk_w) * 512 / 5 ))
-      local net_rx_rate=$(( (net_rx - prev_net_rx) / 5 ))
-      local net_tx_rate=$(( (net_tx - prev_net_tx) / 5 ))
+      local disk_r_rate=$(( (disk_r - prev_disk_r) * 512 / interval ))
+      local disk_w_rate=$(( (disk_w - prev_disk_w) * 512 / interval ))
+      local net_rx_rate=$(( (net_rx - prev_net_rx) / interval ))
+      local net_tx_rate=$(( (net_tx - prev_net_tx) / interval ))
       python3 db.py stats-add "$(date +%s)" "$host" "$cpu_pct" "$mem_pct" "$disk_r_rate" "$disk_w_rate" "$net_rx_rate" "$net_tx_rate" "$temp"
     fi
     prev_idle=$idle
@@ -85,6 +85,7 @@ stats_collector() {
     prev_disk_w=$disk_w
     prev_net_rx=$net_rx
     prev_net_tx=$net_tx
+    sleep $interval
   done
 }
 
