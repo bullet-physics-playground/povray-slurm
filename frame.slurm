@@ -102,7 +102,7 @@ pids=()
 fail=0
 for ((i=0;i<SAMPLES;i++)); do
   CLOCK=$(awk "BEGIN {print $START + $i*$DELTA}")
-  povray "$INI_FILE" -CC +SF$FRAME_NUM +EF$FRAME_NUM +KI$CLOCK +KF$CLOCK -WT$THREADS -D +O"$TMP/sub_$i.png" &
+  povray "$INI_FILE" +FN10 -CC +SF$FRAME_NUM +EF$FRAME_NUM +KI$CLOCK +KF$CLOCK -WT$THREADS -D +O"$TMP/sub_$i.png" &
   pids+=($!)
 done
 for pid in "${pids[@]}"; do
