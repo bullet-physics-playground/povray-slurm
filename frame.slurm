@@ -91,48 +91,21 @@ stats_collector() {
 
 stats_collector & STATS_PID=$!
 
-TMP="/tmp/frame_${JOB_ID}_${FRAME_NUM}_$$"
-mkdir -p "$TMP"
-
 START=$(awk "BEGIN {print ($FRAME_NUM-1)/$TOTAL_FRAMES}")
 END=$(awk "BEGIN {print $FRAME_NUM/$TOTAL_FRAMES}")
-DELTA=$(awk "BEGIN {print ($END-$START)/$SAMPLES}")
 
 pids=()
 fail=0
-for ((i=0;i<SAMPLES;i++)); do
-  CLOCK=$(awk "BEGIN {print $START + $i*$DELTA}")
-  povray "$INI_FILE" +FN10 -CC +SF$FRAME_NUM +EF$FRAME_NUM +KI$CLOCK +KF$CLOCK -WT$THREADS -D +O"$TMP/sub_$i.png" &
-  pids+=($!)
-done
+CLOCK=$(awk "BEGIN {print $START}")
+FRAME_PAD=$(printf "%04d" "$FRAME_NUM")
+
+povray "$INI_FILE" +FN10 -CC +SF$FRAME_NUM +EF$FRAME_NUM +KI$CLOCK +KF$CLOCK -WT$THREADS -D +O- > "$OUT_DIR/frame_$FRAME_PAD.png" &
+pids+=($!)
+
 for pid in "${pids[@]}"; do
   wait $pid || fail=1
 done
 
-if [ $fail -eq 0 ]; then
-  FRAME_PAD=$(printf "%04d" "$FRAME_NUM")
-  python3 -c "
-from PIL import Image
-import glob
-imgs = [Image.open(f) for f in sorted(glob.glob('$TMP/sub_*.png'))]
-if not imgs:
-    exit(1)
-img = Image.new('RGB', imgs[0].size)
-px_in = [i.get_flattened_data() for i in imgs]
-px_out = []
-for y in range(imgs[0].size[1]):
-    for x in range(imgs[0].size[0]):
-        i = y * imgs[0].size[0] + x
-        r = sum(p[i][0] for p in px_in) // len(imgs)
-        g = sum(p[i][1] for p in px_in) // len(imgs)
-        b = sum(p[i][2] for p in px_in) // len(imgs)
-        px_out.append((r, g, b))
-img.putdata(px_out)
-img.save('$OUT_DIR/frame_$FRAME_PAD.png')
-" || fail=1
-fi
-
-rm -rf "$TMP"
 kill $STATS_PID 2>/dev/null
 
 if [ $fail -eq 0 ]; then
