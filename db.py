@@ -14,7 +14,8 @@ DB_RETRY_DELAY = 2
 
 def get_db():
     db = sqlite3.connect(DB_FILE, isolation_level=None)
-    db.execute("PRAGMA busy_timeout=30000")
+    db.execute("PRAGMA busy_timeout=60000")
+    db.execute("PRAGMA synchronous=FULL")
     migrate(db)
     return db
 
@@ -25,8 +26,9 @@ def retry_on_lock(fn, *args, **kwargs):
     for attempt in range(10):
         try:
             return fn(*args, **kwargs)
-        except sqlite3.OperationalError as e:
-            if 'locked' in str(e) and attempt < 9:
+        except (sqlite3.OperationalError, sqlite3.DatabaseError) as e:
+            msg = str(e)
+            if attempt < 9:
                 time.sleep(DB_RETRY_DELAY * (attempt + 1))
                 continue
             raise
@@ -50,7 +52,6 @@ def migrate(db):
         except Exception:
             pass
     db.execute("PRAGMA journal_mode=WAL")
-    db.execute("PRAGMA synchronous=NORMAL")
     db.executescript("""
         CREATE TABLE IF NOT EXISTS jobs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -115,21 +116,32 @@ def migrate(db):
         );
     """)
     if old_frames and old_total > 0:
-        db.execute("INSERT INTO jobs(id, name, priority, status, total_frames) VALUES (1, 'Legacy Job', 0, 'active', ?)", (old_total,))
+        db.execute("BEGIN IMMEDIATE")
         try:
-            rows = db.execute("SELECT id, status, node, attempts, last_error FROM frames").fetchall()
-            for row in rows:
-                db.execute(
-                    "INSERT INTO frames(job_id, frame_number, status, node, attempts, last_error) VALUES (1, ?, ?, ?, ?, ?)",
-                    (row[0], row[1], row[2], row[3], row[4])
-                )
+            db.execute("INSERT INTO jobs(id, name, priority, status, total_frames) VALUES (1, 'Legacy Job', 0, 'active', ?)", (old_total,))
+            try:
+                rows = db.execute("SELECT id, status, node, attempts, last_error FROM frames").fetchall()
+                for row in rows:
+                    db.execute(
+                        "INSERT INTO frames(job_id, frame_number, status, node, attempts, last_error) VALUES (1, ?, ?, ?, ?, ?)",
+                        (row[0], row[1], row[2], row[3], row[4])
+                    )
+            except Exception:
+                pass
+            db.execute("INSERT OR REPLACE INTO config(key, value) VALUES ('par', ?)", (old_par,))
+            db.execute("INSERT OR REPLACE INTO config(key, value) VALUES ('threads', ?)", (old_threads,))
+            db.commit()
         except Exception:
-            pass
-        db.execute("INSERT OR REPLACE INTO config(key, value) VALUES ('par', ?)", (old_par,))
-        db.execute("INSERT OR REPLACE INTO config(key, value) VALUES ('threads', ?)", (old_threads,))
-    db.execute("INSERT OR IGNORE INTO config(key, value) VALUES ('par', '4')")
-    db.execute("INSERT OR IGNORE INTO config(key, value) VALUES ('threads', '1')")
-    db.commit()
+            db.rollback()
+            raise
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        db.execute("INSERT OR IGNORE INTO config(key, value) VALUES ('par', '4')")
+        db.execute("INSERT OR IGNORE INTO config(key, value) VALUES ('threads', '1')")
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
 def parse_frame_ref(ref):
     if ':' in ref:
@@ -288,14 +300,20 @@ def cmd_complete(args):
     job_id, frame_number = parse_frame_ref(args[0])
     hostname = args[1]
     db = get_db()
-    db.execute(
-        "UPDATE frames SET status='completed', node=?, updated_at=datetime('now') WHERE job_id=? AND frame_number=?",
-        (hostname, job_id, frame_number)
-    )
-    db.execute(
-        "INSERT INTO progress(ts, node, job_id, frame_number) VALUES (?, ?, ?, ?)",
-        (int(time.time()), hostname, job_id, frame_number)
-    )
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        db.execute(
+            "UPDATE frames SET status='completed', node=?, updated_at=datetime('now') WHERE job_id=? AND frame_number=?",
+            (hostname, job_id, frame_number)
+        )
+        db.execute(
+            "INSERT INTO progress(ts, node, job_id, frame_number) VALUES (?, ?, ?, ?)",
+            (int(time.time()), hostname, job_id, frame_number)
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
 def cmd_fail(args):
     if len(args) < 3:
@@ -315,19 +333,25 @@ def cmd_fail(args):
     else:
         new_status = 'failed'
         outcome = 'retry'
-    db.execute(
-        "UPDATE frames SET status=?, node=?, attempts=?, last_error=?, updated_at=datetime('now') WHERE job_id=? AND frame_number=?",
-        (new_status, hostname, attempt, message, job_id, frame_number)
-    )
-    ts = int(time.time())
-    db.execute(
-        "INSERT INTO error_log(ts, node, job_id, frame_number, attempt, message) VALUES (?,?,?,?,?,?)",
-        (ts, hostname, job_id, frame_number, attempt, message)
-    )
-    db.execute(
-        "INSERT INTO retry_log(ts, node, job_id, frame_number, attempt, outcome) VALUES (?,?,?,?,?,?)",
-        (ts, hostname, job_id, frame_number, attempt, outcome)
-    )
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        db.execute(
+            "UPDATE frames SET status=?, node=?, attempts=?, last_error=?, updated_at=datetime('now') WHERE job_id=? AND frame_number=?",
+            (new_status, hostname, attempt, message, job_id, frame_number)
+        )
+        ts = int(time.time())
+        db.execute(
+            "INSERT INTO error_log(ts, node, job_id, frame_number, attempt, message) VALUES (?,?,?,?,?,?)",
+            (ts, hostname, job_id, frame_number, attempt, message)
+        )
+        db.execute(
+            "INSERT INTO retry_log(ts, node, job_id, frame_number, attempt, outcome) VALUES (?,?,?,?,?,?)",
+            (ts, hostname, job_id, frame_number, attempt, outcome)
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     print(attempt)
 
 def cmd_attempts(args):
@@ -390,10 +414,16 @@ def cmd_stats_add(args):
         return
     ts, node, cpu, mem, disk_r, disk_w, net_rx, net_tx, temp = args[:9]
     db = get_db()
-    db.execute(
-        "INSERT INTO node_stats(ts, node, cpu, mem, disk_r, disk_w, net_rx, net_tx, temp) VALUES (?,?,?,?,?,?,?,?,?)",
-        (int(ts), node, float(cpu), float(mem), int(disk_r), int(disk_w), int(net_rx), int(net_tx), float(temp))
-    )
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        db.execute(
+            "INSERT INTO node_stats(ts, node, cpu, mem, disk_r, disk_w, net_rx, net_tx, temp) VALUES (?,?,?,?,?,?,?,?,?)",
+            (int(ts), node, float(cpu), float(mem), int(disk_r), int(disk_w), int(net_rx), int(net_tx), float(temp))
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
 def cmd_stats(args):
     db = get_db_readonly()
