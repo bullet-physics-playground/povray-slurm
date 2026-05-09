@@ -13,4 +13,4 @@ read JID FNAME TFRAMES OUT_DIR JNAME PRIO <<< "$(python3 db.py frame-info "${JOB
 [ -z "$OUT_DIR" ] && { echo "No output dir for job $JOB_ID"; exit 1; }
 [ -d "$OUT_DIR" ] || { echo "Output dir $OUT_DIR not found"; exit 1; }
 
-ffmpeg -y -framerate 30 -i "$OUT_DIR/frame_%04d.png" -c:v libx264 -pix_fmt yuv420p "output_job${JOB_ID}.mp4"
+ffmpeg -y -framerate 30 -i "$OUT_DIR/frame_%04d.png" -c:v libx264 -pix_fmt yuv420p "job_${JOB_ID}.mp4"
