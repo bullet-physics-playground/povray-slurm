@@ -52,10 +52,9 @@ echo "Created job $JOB_ID (priority 0) — $FRAMES frames"
 
 BENCH=$(sbatch benchmark.slurm | awk '{print $4}')
 check "Submitted benchmark job"
-echo "Benchmark job: $BENCH"
 
 JOB=$(sbatch --dependency=afterok:$BENCH --array=1-$FRAMES --nodes=1 --export=JOB_ID=$JOB_ID frame.slurm | awk '{print $4}')
-check "Submitted frame rendering job"
+check "Submitted povray job"
 
 FFMPEG=$(sbatch --dependency=afterany:$JOB --export=JOB_ID=$JOB_ID ffmpeg.slurm | awk '{print $4}')
 check "Submitted ffmpeg job"
