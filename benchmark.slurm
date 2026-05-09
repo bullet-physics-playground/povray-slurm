@@ -33,7 +33,7 @@ for PAR in 1 2 4 8 16 32 64 128; do
   pids=()
   for ((i=0;i<SAMPLES;i++)); do
     CLOCK=$(awk "BEGIN {print ($FRAME-1)/120 + $i*(1.0/120/$SAMPLES)}")
-    povray "$INI_FILE" -V +SF$FRAME +EF$FRAME +KI$CLOCK +KF$CLOCK -WT$THREADS -D +O"$TMP_DIR/test_$i.png" &
+    povray "$INI_FILE" -CC +SF$FRAME +EF$FRAME +KI$CLOCK +KF$CLOCK -WT$THREADS -D +O"$TMP_DIR/test_$i.png" &
     pids+=($!)
 
     if (( ${#pids[@]} >= PAR )); then
