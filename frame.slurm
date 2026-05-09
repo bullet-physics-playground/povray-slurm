@@ -17,9 +17,6 @@ none
 allowed
 EOF
 
-PAR=$(python3 db.py config par)
-THREADS=$(python3 db.py config threads)
-
 JOB_ID=${JOB_ID:-1}
 FRAME_NUM=$SLURM_ARRAY_TASK_ID
 FRAME_REF="${JOB_ID}:${FRAME_NUM}"
@@ -98,7 +95,7 @@ fail=0
 CLOCK=$(awk "BEGIN {print $START}")
 FRAME_PAD=$(printf "%04d" "$FRAME_NUM")
 
-povray "$INI_FILE" +FN10 -CC +SF$FRAME_NUM +EF$FRAME_NUM +KI$CLOCK +KF$CLOCK -WT$THREADS -D +O- > "$OUT_DIR/frame_$FRAME_PAD.png" &
+povray "$INI_FILE" +FN10 -CC +SF$FRAME_NUM +EF$FRAME_NUM +KI$CLOCK +KF$CLOCK -D +O- > "$OUT_DIR/frame_$FRAME_PAD.png" &
 pids+=($!)
 
 for pid in "${pids[@]}"; do
