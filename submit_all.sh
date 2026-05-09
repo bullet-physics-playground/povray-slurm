@@ -42,16 +42,11 @@ check "Got job info"
 mkdir -p "$JOB_DIR"
 check "Created output directory"
 
-rm -f "$JOB_DIR"/*.png
-check "Cleaned output directory"
-
 sed -e "s/FRAME_COUNT/$FRAMES/" \
     -e "s/WIDTH_VAL/$WIDTH/" \
     -e "s/HEIGHT_VAL/$HEIGHT/" \
-    animation.ini > animation_render.ini
-check "Generated animation_render.ini"
-cp animation_render.ini "$JOB_DIR/"
-check "Copied animation_render.ini to job directory"
+    animation.ini > $JOB_DIR/animation_render.ini
+check "Generated $JOB_DIR/animation_render.ini"
 
 echo "Created job $JOB_ID (priority 0) — $FRAMES frames"
 
@@ -61,8 +56,6 @@ echo "Benchmark job: $BENCH"
 
 JOB=$(sbatch --dependency=afterok:$BENCH --array=1-$FRAMES --nodes=1 --export=JOB_ID=$JOB_ID frame.slurm | awk '{print $4}')
 check "Submitted frame rendering job"
-echo "Frame rendering job: $JOB"
 
 FFMPEG=$(sbatch --dependency=afterany:$JOB --export=JOB_ID=$JOB_ID ffmpeg.slurm | awk '{print $4}')
 check "Submitted ffmpeg job"
-echo "FFmpeg job: $FFMPEG"
