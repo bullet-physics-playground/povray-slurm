@@ -257,7 +257,7 @@ def cmd_dequeue(args):
             SELECT f.job_id, f.frame_number FROM frames f
             JOIN jobs j ON f.job_id = j.id
             WHERE f.status = 'pending' AND j.status = 'active'
-            ORDER BY j.priority DESC, j.id ASC, f.frame_number ASC
+            ORDER BY j.created_at ASC, f.frame_number ASC
             LIMIT 1
         )
         RETURNING job_id, frame_number
@@ -272,7 +272,7 @@ def cmd_dequeue(args):
             SELECT f.job_id, f.frame_number FROM frames f
             JOIN jobs j ON f.job_id = j.id
             WHERE f.status = 'failed' AND j.status = 'active' AND f.node != ?
-            ORDER BY j.priority DESC, j.id ASC, f.frame_number ASC
+            ORDER BY j.created_at ASC, f.frame_number ASC
             LIMIT 1
         )
         RETURNING job_id, frame_number
