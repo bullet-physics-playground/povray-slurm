@@ -15,9 +15,8 @@ Each frame is rendered with motion blur by averaging multiple time samples, then
 
 - SLURM cluster with `sbatch`, `srun`
 - POV-Ray 3.8 (`povray`) — version 3.7 will **not** work
-- Python 3 with PIL/Pillow and `sqlite3` (stdlib)
+- Python 3 with `sqlite3` (stdlib)
 - FFmpeg
-- ImageMagick (`convert`) — for work-stealing worker
 
 ## Files
 
