@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
 
-#SBATCH --job-name=pov_bench
+#SBATCH --job-name=benchmark
 #SBATCH --cpus-per-task=4
 #SBATCH --time=00:20:00
 #SBATCH --output=logs/bench.out
 
-INI_FILE="animation.ini"
+INI_FILE="/tmp/pov_bench_${SLURM_JOB_ID}_animation.ini"
 FRAME=20
 TMP_DIR="/tmp/pov_bench_$SLURM_JOB_ID"
 SAMPLES=6
 TOTAL_CPUS=$SLURM_CPUS_PER_TASK
+
+sed -e "s/FRAME_COUNT/$FRAME/" \
+    -e "s/WIDTH_VAL/1280/" \
+    -e "s/HEIGHT_VAL/720/" \
+    animation.ini > "$INI_FILE"
 
 mkdir -p "$HOME/.povray/3.8"
 [ -f "$HOME/.povray/3.8/povray.conf" ] || cat > "$HOME/.povray/3.8/povray.conf" << 'EOF'
@@ -24,7 +29,7 @@ mkdir -p "$TMP_DIR" logs
 BEST_TIME=999999
 BEST=""
 
-for PAR in 1 2 4 8 16 32 64 128; do
+for PAR in 1 2 4 8 16 32; do
   (( PAR > TOTAL_CPUS )) && continue
   THREADS=$((TOTAL_CPUS / PAR))
 
