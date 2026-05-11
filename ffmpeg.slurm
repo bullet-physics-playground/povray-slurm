@@ -3,7 +3,6 @@
 #SBATCH --job-name=ffmpeg
 #SBATCH --time=01:00:00
 #SBATCH --output=logs/ffmpeg.out
-#SBATCH --nodes=1
 
 JOB_ID=${JOB_ID:-$(python3 db.py current-job | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('id',''))" 2>/dev/null)}
 
